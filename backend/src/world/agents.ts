@@ -61,12 +61,12 @@ export class Agent {
     let userPrompt = "";
 
     if (currentBlock) {
-      userPrompt += `[현재까지의 대화 요약]:\n${currentBlock}\n\n`;
+      userPrompt += `[Conversation Summary So Far]:\n${currentBlock}\n\n`;
     }
 
-    userPrompt += `[새로운 메시지]:\n${recentMessage.speaker}: ${recentMessage.content}\n\n`;
-    userPrompt += `위 상황에서 당신은 어떻게 대답하시겠습니까?\n\n`;
-    userPrompt += `중요: 당신의 대화 내용만 답변하세요. 순수하게 당신의 말만 출력하세요.`;
+    userPrompt += `[New Message]:\n${recentMessage.speaker}: ${recentMessage.content}\n\n`;
+    userPrompt += `How would you respond in this situation?\n\n`;
+    userPrompt += `Important: Only respond with your dialogue. Output only your own words.`;
 
     try {
       console.log(`\n[${this.persona.name}] Requesting response via A2A...`);

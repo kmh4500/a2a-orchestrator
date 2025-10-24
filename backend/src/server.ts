@@ -2,9 +2,35 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import chatRouter from "./routes/chat";
+import threadsRouter from "./routes/threads";
+import agentsRouter from "./routes/agents";
+import ThreadManager from "./world/threadManager";
+import { initRedis } from "./utils/redis";
 
 // Load environment variables
 dotenv.config();
+
+// Initialize Redis and ThreadManager
+async function initialize() {
+  const apiUrl = process.env.LLM_API_URL;
+  const model = process.env.LLM_MODEL;
+
+  if (!apiUrl || !model) {
+    console.error("Error: LLM_API_URL and LLM_MODEL must be set in environment variables");
+    process.exit(1);
+  }
+
+  // Initialize Redis
+  await initRedis();
+
+  // Initialize ThreadManager
+  ThreadManager.initialize(apiUrl, model);
+  console.log("✅ ThreadManager initialized");
+
+  // Load existing threads from Redis
+  const threadManager = ThreadManager.getInstance();
+  await threadManager.loadThreadsFromRedis();
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -42,6 +68,8 @@ app.get("/api/health", (req, res) => {
 
 // Routes
 app.use("/api/chat", chatRouter);
+app.use("/api/threads", threadsRouter);
+app.use("/api/agents", agentsRouter);
 
 // Error handling middleware
 app.use(
@@ -58,10 +86,21 @@ app.use(
   }
 );
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 Backend server running on http://localhost:${PORT}`);
-  console.log(`📡 API endpoints:`);
-  console.log(`   - POST http://localhost:${PORT}/api/chat`);
-  console.log(`   - GET  http://localhost:${PORT}/api/health`);
-  console.log(`\n🌍 Allowed origins: ${allowedOrigins.join(", ")}\n`);
+// Start server after initialization
+initialize().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Backend server running on http://localhost:${PORT}`);
+    console.log(`📡 API endpoints:`);
+    console.log(`   - GET    http://localhost:${PORT}/api/threads`);
+    console.log(`   - POST   http://localhost:${PORT}/api/threads`);
+    console.log(`   - POST   http://localhost:${PORT}/api/threads/:id/agents`);
+    console.log(`   - POST   http://localhost:${PORT}/api/threads/:id/messages`);
+    console.log(`   - GET    http://localhost:${PORT}/api/threads/:id/stream`);
+    console.log(`   - POST   http://localhost:${PORT}/api/agents/import`);
+    console.log(`   - GET    http://localhost:${PORT}/api/health`);
+    console.log(`\n🌍 Allowed origins: ${allowedOrigins.join(", ")}\n`);
+  });
+}).catch((error) => {
+  console.error("Failed to initialize server:", error);
+  process.exit(1);
 });

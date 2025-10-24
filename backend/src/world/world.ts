@@ -1,9 +1,10 @@
 import { Agent, AGENT_PERSONAS } from "./agents";
-import { Message } from "../types";
+import { Message, AgentPersona } from "../types";
 import https from "https";
 import RequestManager from "./requestManager";
 import { MessageDAG } from "./messageDAG";
 import { Verifier } from "./verifier";
+import { getRedisClient } from "../utils/redis";
 
 // Create a custom agent that allows self-signed certificates
 const httpsAgent = new https.Agent({
@@ -16,6 +17,7 @@ export class World {
   private verifier: Verifier;
   private apiUrl: string;
   private model: string;
+  private threadId: string;
   private messageIdCounter: number;
   private onMessageCallbacks: Map<string, (message: Message) => void> = new Map();
   private onBlockCallbacks: Map<string, (block: { summary: string; next: { id: string; name: string }; stop_reason?: string; user_intent?: string }) => void> = new Map();
@@ -26,14 +28,26 @@ export class World {
   private shouldStopConversation: boolean = false; // Flag to stop conversation
   private stopReason: string = "";
   private userIntent: string = "";
+  private currentConversationMessageCount: number = 0; // Count messages since last user message
 
-  constructor(apiUrl: string, model: string) {
+  constructor(apiUrl: string, model: string, threadId: string, agentPersonas?: AgentPersona[]) {
     this.apiUrl = apiUrl;
     this.model = model;
-    this.agents = AGENT_PERSONAS.map(persona => new Agent(persona));
+    this.threadId = threadId;
+    // Use provided personas or default to AGENT_PERSONAS
+    const personas = agentPersonas && agentPersonas.length > 0 ? agentPersonas : AGENT_PERSONAS;
+    this.agents = personas.map(persona => new Agent(persona));
     this.messageDAG = new MessageDAG();
     this.verifier = new Verifier(apiUrl, model);
     this.messageIdCounter = 0;
+  }
+
+  /**
+   * Update agents dynamically
+   */
+  updateAgents(agentPersonas: AgentPersona[]) {
+    this.agents = agentPersonas.map(persona => new Agent(persona));
+    console.log(`[World] Updated agents. Total: ${this.agents.length}`);
   }
 
   addMessageCallback(id: string, callback: (message: Message) => void) {
@@ -93,48 +107,52 @@ export class World {
     recommendation_reason: string;
   }> {
     // Build agent information for prompt
-    const agentInfo = AGENT_PERSONAS.map(p =>
-      `- ID: ${p.name}, Name: ${p.name}, Role: ${p.role}, Description: ${p.systemPrompt.split('\n')[0]}`
-    ).join('\n');
+    const agentInfo = this.agents.map(agent => {
+      const persona = agent.getPersona();
+      return `- ID: ${persona.name}, Name: ${persona.name}, Role: ${persona.role}`;
+    }).join('\n');
 
     const availableSpeakers = [
-      ...AGENT_PERSONAS.map(p => ({ id: p.name, name: p.name })),
+      ...this.agents.map(agent => {
+        const persona = agent.getPersona();
+        return { id: persona.name, name: persona.name };
+      }),
       { id: "user", name: "User" }
     ];
 
     const agentsList = availableSpeakers.map(s => s.name).join(", ");
 
     // Use stored initial user message
-    const userMessageContent = this.initialUserMessage || "(없음)";
+    const userMessageContent = this.initialUserMessage || "(none)";
 
-    const prompt = `다음은 이전 블록 요약과 새로운 메시지입니다.
+    const prompt = `Here is the previous block summary and the new message.
 
-이전 블록:
-${this.currentBlock || "(없음)"}
+Previous Block:
+${this.currentBlock || "(none)"}
 
-최초 유저 메시지:
+Initial User Message:
 ${userMessageContent}
 
-최근 메시지:
+Recent Message:
 ${newMessage.speaker}: ${newMessage.content}
 
-사용 가능한 Agents:
+Available Agents:
 ${agentInfo}
-- ID: user, Name: User, Role: 사용자, Description: 질문하거나 의견을 제시하는 사용자
+- ID: user, Name: User, Role: User
 
-다음 작업을 수행해주세요:
-1. 이전 블록과 새 메시지를 합쳐서 500자 이내로 요약
-2. 대화 맥락을 고려하여 다음으로 응답하면 가장 적합한 speaker를 추천 (${agentsList} 중 선택)
-3. 최근 메세지를 쓴 사람을 또 추천할 수는 없음
+Please perform the following tasks:
+1. Summarize the previous block and new message in 500 characters or less
+2. Recommend the most suitable speaker to respond next based on the conversation context (choose from: ${agentsList})
+3. Do not recommend the person who wrote the most recent message
 
-JSON 형태로만 응답해주세요:
+Respond in JSON format only:
 {
-  "summary": "500자 이내 요약 내용",
+  "summary": "Summary within 500 characters",
   "next": {
     "id": "agent_id",
     "name": "agent_name"
   },
-  "recommendation_reason": "추천 사유 설명"
+  "recommendation_reason": "Explanation of recommendation"
 }`;
 
     try {
@@ -191,6 +209,8 @@ JSON 형태로만 응답해주세요:
     this.shouldStopConversation = false;
     this.stopReason = "";
     this.userIntent = "";
+    this.firstResponseReceived.clear();
+    this.currentConversationMessageCount = 0; // Reset message count for new conversation
 
     const message: Message = {
       id: this.generateMessageId(),
@@ -200,43 +220,84 @@ JSON 형태로만 응답해주세요:
     };
     this.messageDAG.addMessage(message);
 
-    // Generate block for user message and get next speaker recommendation
-    const blockResult = await this.summarizeBlock(message);
-    this.currentBlock = blockResult.summary;
-    this.nextSpeaker = blockResult.next;
-    console.log(`[USER MESSAGE BLOCK] ${this.currentBlock.substring(0, 100)}...`);
-    console.log(`[NEXT SPEAKER RECOMMENDED] ${blockResult.next.name} (${blockResult.next.id})`);
-
-    // Send block update to UI
-    this.notifyBlock(blockResult);
-
-    // Start verification in background (non-blocking)
-    this.verifier.verify(
-      this.initialUserMessage,
-      this.currentBlock,
-      message.content,
-      message.speaker
-    ).then(verification => {
-      this.userIntent = verification.user_intent;
-      if (verification.should_stop) {
-        this.shouldStopConversation = true;
-        this.stopReason = verification.stop_reason;
-        this.nextSpeaker = { id: "user", name: "User" };
-        console.log(`[Verifier] STOP flag set: ${this.stopReason}`);
-
-        // Notify UI about the stop
-        this.notifyBlock({
-          summary: this.currentBlock,
-          next: this.nextSpeaker,
-          stop_reason: this.stopReason,
-          user_intent: this.userIntent
-        });
-      }
-    }).catch(error => {
-      console.error("Error in verification:", error);
-    });
+    // Save to Redis
+    this.saveMessagesToRedis(this.threadId);
 
     return message.id;
+  }
+
+  /**
+   * Broadcast user message to all agents (parallel responses)
+   */
+  async broadcastToAgents(userMessage: Message) {
+    console.log(`\n[BROADCAST] Broadcasting to ${this.agents.length} agents...`);
+
+    // Request responses from all agents in parallel
+    const responsePromises = this.agents.map(agent =>
+      this.processSpecificAgent(userMessage.content, agent.getName())
+        .catch(error => {
+          console.error(`[BROADCAST] Error from ${agent.getName()}:`, error);
+        })
+    );
+
+    // Wait for all agents to respond
+    await Promise.all(responsePromises);
+
+    // Find the first (accepted) response
+    const allMessages = this.messageDAG.getAllMessages();
+    const acceptedMessage = allMessages.find(m =>
+      m.replyTo === userMessage.id && m.status === "accepted"
+    );
+
+    if (acceptedMessage) {
+      console.log(`[BROADCAST] First response from ${acceptedMessage.speaker} accepted`);
+
+      // Increment message count (accepted message counts)
+      this.currentConversationMessageCount++;
+
+      // Generate block for accepted message and get next speaker recommendation
+      const blockResult = await this.summarizeBlock(acceptedMessage);
+      this.currentBlock = blockResult.summary;
+      this.nextSpeaker = blockResult.next;
+      this.notifyBlock(blockResult);
+
+      console.log(`[BLOCK UPDATED] ${this.currentBlock.substring(0, 100)}...`);
+      console.log(`[NEXT SPEAKER RECOMMENDED] ${blockResult.next.name} (${blockResult.next.id})`);
+
+      // Start verification in background (non-blocking)
+      this.verifier.verify(
+        this.initialUserMessage,
+        this.currentBlock,
+        acceptedMessage.content,
+        acceptedMessage.speaker,
+        this.currentConversationMessageCount
+      ).then(verification => {
+        this.userIntent = verification.user_intent;
+        if (verification.should_stop) {
+          this.shouldStopConversation = true;
+          this.stopReason = verification.stop_reason;
+          this.nextSpeaker = { id: "user", name: "User" };
+          console.log(`[Verifier] STOP flag set: ${this.stopReason}`);
+
+          // Notify UI about the stop
+          this.notifyBlock({
+            summary: this.currentBlock,
+            next: this.nextSpeaker,
+            stop_reason: this.stopReason,
+            user_intent: this.userIntent
+          });
+        }
+      }).catch(error => {
+        console.error("Error in verification:", error);
+      });
+
+      // Save to Redis
+      this.saveMessagesToRedis(this.threadId);
+
+      return acceptedMessage;
+    }
+
+    return null;
   }
 
   /**
@@ -288,6 +349,9 @@ JSON 형태로만 응답해주세요:
         this.messageDAG.addMessage(agentMessage);
         this.notifyMessage(agentMessage);
 
+        // Increment message count
+        this.currentConversationMessageCount++;
+
         // Generate block and get next speaker recommendation
         const blockResult = await this.summarizeBlock(agentMessage);
         this.currentBlock = blockResult.summary;
@@ -296,12 +360,16 @@ JSON 형태로만 응답해주세요:
 
         console.log(`[AUTO] ${nextAgent.getName()} responded. Next: ${this.nextSpeaker.name}`);
 
+        // Save to Redis
+        this.saveMessagesToRedis(this.threadId);
+
         // Run verification in background (non-blocking)
         this.verifier.verify(
           this.initialUserMessage,
           this.currentBlock,
           agentMessage.content,
-          agentMessage.speaker
+          agentMessage.speaker,
+          this.currentConversationMessageCount
         ).then(verification => {
           this.userIntent = verification.user_intent;
           if (verification.should_stop) {
@@ -355,6 +423,10 @@ JSON 형태로만 응답해주세요:
     this.shouldStopConversation = false;
     this.stopReason = "";
     this.userIntent = "";
+    this.currentConversationMessageCount = 0;
+
+    // Save cleared state to Redis
+    this.saveMessagesToRedis(this.threadId);
   }
 
   /**
@@ -425,5 +497,59 @@ JSON 형태로만 응답해주세요:
     console.log(`[NEXT SPEAKER RECOMMENDED] ${blockResult.next.name} (${blockResult.next.id})`);
 
     return blockResult;
+  }
+
+  /**
+   * Save messages to Redis
+   */
+  async saveMessagesToRedis(threadId: string): Promise<void> {
+    try {
+      const redis = getRedisClient();
+      const messages = this.messageDAG.getAllMessages();
+      const data = {
+        messages,
+        currentBlock: this.currentBlock,
+        nextSpeaker: this.nextSpeaker,
+        messageIdCounter: this.messageIdCounter,
+        initialUserMessage: this.initialUserMessage,
+        currentConversationMessageCount: this.currentConversationMessageCount,
+      };
+      await redis.set(`messages:${threadId}`, JSON.stringify(data));
+    } catch (error) {
+      console.error(`[World] Error saving messages to Redis:`, error);
+    }
+  }
+
+  /**
+   * Load messages from Redis
+   */
+  async loadMessagesFromRedis(threadId: string): Promise<void> {
+    try {
+      const redis = getRedisClient();
+      const data = await redis.get(`messages:${threadId}`);
+
+      if (data) {
+        const parsed = JSON.parse(data);
+
+        // Restore messages
+        this.messageDAG.clear();
+        if (parsed.messages && Array.isArray(parsed.messages)) {
+          for (const msg of parsed.messages) {
+            this.messageDAG.addMessage(msg);
+          }
+        }
+
+        // Restore state
+        this.currentBlock = parsed.currentBlock || "";
+        this.nextSpeaker = parsed.nextSpeaker || { id: "user", name: "User" };
+        this.messageIdCounter = parsed.messageIdCounter || 0;
+        this.initialUserMessage = parsed.initialUserMessage || "";
+        this.currentConversationMessageCount = parsed.currentConversationMessageCount || 0;
+
+        console.log(`[World] Loaded ${parsed.messages?.length || 0} messages for thread ${threadId}`);
+      }
+    } catch (error) {
+      console.error(`[World] Error loading messages from Redis:`, error);
+    }
   }
 }

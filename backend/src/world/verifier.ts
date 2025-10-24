@@ -30,43 +30,69 @@ export class Verifier {
     initialUserMessage: string,
     currentBlock: string,
     latestMessage: string,
-    latestSpeaker: string
+    latestSpeaker: string,
+    messageCount: number = 0
   ): Promise<VerificationResult> {
-    const prompt = `다음은 유저의 최초 발화와 현재까지의 대화 상황입니다.
+    // Determine evaluation strictness based on conversation length
+    let evaluationLevel = "";
+    let evaluationGuidance = "";
 
-최초 유저 발화:
+    if (messageCount <= 3) {
+      evaluationLevel = "LENIENT";
+      evaluationGuidance = "The conversation is still in early stages. Allow more discussion unless the user's intent is clearly and completely satisfied.";
+    } else if (messageCount <= 7) {
+      evaluationLevel = "MODERATE";
+      evaluationGuidance = "The conversation has progressed moderately. Evaluate whether the user's intent has been reasonably addressed.";
+    } else if (messageCount <= 12) {
+      evaluationLevel = "STRICT";
+      evaluationGuidance = "The conversation is becoming lengthy. Be more critical about repetition, lack of progress, or topic deviation.";
+    } else {
+      evaluationLevel = "VERY_STRICT";
+      evaluationGuidance = "The conversation is very long. Strongly favor stopping unless there is clear, substantial progress being made toward the user's intent.";
+    }
+
+    const prompt = `Here is the user's initial message and the current conversation status.
+
+Initial User Message:
 ${initialUserMessage}
 
-현재까지의 대화 요약:
-${currentBlock || "(없음)"}
+Conversation Summary So Far:
+${currentBlock || "(none)"}
 
-최근 메시지:
+Recent Message:
 ${latestSpeaker}: ${latestMessage}
 
-다음 작업을 수행해주세요:
-1. 최초 유저 발화의 목적(의도)을 파악 ${this.userIntent ? `(기존: ${this.userIntent})` : ''}
-2. 현재 대화가 유저의 목적을 충분히 만족시켰는지 판단
-3. 또는 대화가 유저의 목적에 대해 더 이상 진전이 없는지 판단
+Conversation Length: ${messageCount} messages
+Evaluation Level: ${evaluationLevel}
+Guidance: ${evaluationGuidance}
 
-대화를 종료해야 하는 경우:
-- 유저의 질문에 충분한 답변이 제공됨
-- 유저가 요청한 정보/추천/의견이 제공됨
-- 대화가 반복되거나 새로운 인사이트 없이 순환됨
-- 주제가 완전히 벗어남
+Please perform the following tasks:
+1. Identify the purpose (intent) of the initial user message ${this.userIntent ? `(existing: ${this.userIntent})` : ''}
+2. Determine if the current conversation has sufficiently satisfied the user's purpose
+3. Or determine if the conversation is no longer making progress toward the user's purpose
+4. **Apply the evaluation level based on conversation length** - longer conversations should be judged more strictly
 
-대화를 계속해야 하는 경우:
-- 유저의 질문에 아직 답변이 부족함
-- 토론이 활발하게 진행 중이며 새로운 아이디어가 나오고 있음
-- 유저의 목적 달성을 위해 더 논의가 필요함
+Cases when the conversation should stop:
+- Sufficient answers have been provided to the user's questions
+- Information/recommendations/opinions requested by the user have been provided
+- The conversation is repetitive or cycling without new insights
+- The topic has completely deviated
+- **For long conversations (${evaluationLevel}): Even minor repetition or lack of clear progress should trigger stopping**
 
-JSON 형태로만 응답해주세요:
+Cases when the conversation should continue:
+- The user's questions still lack sufficient answers
+- The discussion is actively progressing with new ideas emerging
+- More discussion is needed to achieve the user's purpose
+- **For short conversations: Allow more exploration and discussion**
+
+Respond in JSON format only:
 {
-  "user_intent": "유저의 발화 목적 (간단명료하게)",
+  "user_intent": "User's message purpose (concise)",
   "should_stop": true,
-  "stop_reason": "대화 종료 사유 설명"
+  "stop_reason": "Explanation of conversation ending reason"
 }
 
-should_stop이 false인 경우 stop_reason은 빈 문자열로 설정하세요.`;
+If should_stop is false, set stop_reason to an empty string.`;
 
     try {
       console.log(`\n[Verifier] Checking if conversation should stop...`);
