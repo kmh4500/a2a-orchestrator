@@ -3,34 +3,6 @@ import { MessageSendParams, Message as A2AMessage } from "@a2a-js/sdk";
 import { v4 as uuidv4 } from "uuid";
 import { Message, AgentPersona } from "../types";
 
-// Define 4 distinct agent personas with A2A URLs
-export const AGENT_PERSONAS: AgentPersona[] = [
-  {
-    name: "류성룡",
-    role: "영의정",
-    a2aUrl: process.env.AGENT_RYU_SEONG_RYONG_URL || "https://example.com/agent/ryu-seong-ryong",
-    color: "bg-blue-100 border-blue-400",
-  },
-  {
-    name: "류운룡",
-    role: "유학자",
-    a2aUrl: process.env.AGENT_RYU_UN_RYONG_URL || "https://example.com/agent/ryu-un-ryong",
-    color: "bg-purple-100 border-purple-400",
-  },
-  {
-    name: "깨비",
-    role: "도깨비",
-    a2aUrl: process.env.AGENT_GGAEBI_URL || "https://example.com/agent/ggaebi",
-    color: "bg-green-100 border-green-400",
-  },
-  {
-    name: "호랭",
-    role: "수호신",
-    a2aUrl: process.env.AGENT_HORAENG_URL || "https://example.com/agent/horaeng",
-    color: "bg-amber-100 border-amber-400",
-  },
-];
-
 export class Agent {
   private persona: AgentPersona;
   private a2aClient: A2AClient | null = null;

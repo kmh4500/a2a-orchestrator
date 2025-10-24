@@ -14,10 +14,6 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://host.docker.internal:6379}
       - API_URL=${API_URL}
       - MODEL=${MODEL}
-      - AGENT_RYU_SEONG_RYONG_URL=${AGENT_RYU_SEONG_RYONG_URL}
-      - AGENT_RYU_UN_RYONG_URL=${AGENT_RYU_UN_RYONG_URL}
-      - AGENT_GGAEBI_URL=${AGENT_GGAEBI_URL}
-      - AGENT_HORAENG_URL=${AGENT_HORAENG_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
