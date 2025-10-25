@@ -99,6 +99,20 @@ export class World {
   }
 
   /**
+   * Randomly select N agents from the available agents
+   */
+  private selectRandomAgents(count: number): Agent[] {
+    if (count >= this.agents.length) {
+      // If requesting more than available, return all agents
+      return [...this.agents];
+    }
+
+    // Shuffle array and take first N elements
+    const shuffled = [...this.agents].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count);
+  }
+
+  /**
    * Summarize the current block with new accepted message and recommend next speaker
    */
   private async summarizeBlock(newMessage: Message): Promise<{
@@ -227,13 +241,19 @@ Respond in JSON format only:
   }
 
   /**
-   * Broadcast user message to all agents (parallel responses)
+   * Broadcast user message to randomly selected agents (parallel responses)
+   * Randomly selects 1-4 agents from the available agents
    */
   async broadcastToAgents(userMessage: Message) {
-    console.log(`\n[BROADCAST] Broadcasting to ${this.agents.length} agents...`);
+    // Randomly select 1-4 agents
+    const numAgentsToSelect = Math.floor(Math.random() * 4) + 1; // Random number between 1 and 4
+    const selectedAgents = this.selectRandomAgents(numAgentsToSelect);
 
-    // Request responses from all agents in parallel
-    const responsePromises = this.agents.map(agent =>
+    console.log(`\n[BROADCAST] Broadcasting to ${selectedAgents.length} randomly selected agents (out of ${this.agents.length})...`);
+    console.log(`[BROADCAST] Selected agents: ${selectedAgents.map(a => a.getName()).join(', ')}`);
+
+    // Request responses from selected agents in parallel
+    const responsePromises = selectedAgents.map(agent =>
       this.processSpecificAgent(userMessage.content, agent.getName())
         .catch(error => {
           console.error(`[BROADCAST] Error from ${agent.getName()}:`, error);
