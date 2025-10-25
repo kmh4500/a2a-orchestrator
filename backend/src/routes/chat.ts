@@ -1,20 +1,7 @@
 import { Router, Request, Response } from "express";
 import WorldManager from "../world/worldManager";
-import { AGENT_PERSONAS } from "../world/agents";
 
 const router = Router();
-
-// Get agent personas
-router.get("/agents", (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    agents: AGENT_PERSONAS.map(p => ({
-      name: p.name,
-      role: p.role,
-      color: p.color
-    }))
-  });
-});
 
 router.post("/", async (req: Request, res: Response) => {
   try {

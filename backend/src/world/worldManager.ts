@@ -16,7 +16,7 @@ class WorldManager {
 
   initWorld(apiUrl: string, model: string): World {
     if (!this.world) {
-      this.world = new World(apiUrl, model);
+      this.world = new World(apiUrl, model, "legacy", []);
     }
     return this.world;
   }
@@ -26,7 +26,7 @@ class WorldManager {
   }
 
   resetWorld(apiUrl: string, model: string): World {
-    this.world = new World(apiUrl, model);
+    this.world = new World(apiUrl, model, "legacy", []);
     return this.world;
   }
 }

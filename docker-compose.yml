@@ -12,8 +12,10 @@ services:
       - NODE_ENV=production
       - PORT=3001
       - REDIS_URL=${REDIS_URL:-redis://host.docker.internal:6379}
-      - API_URL=${API_URL}
-      - MODEL=${MODEL}
+      - LLM_API_URL=${LLM_API_URL}
+      - LLM_MODEL=${LLM_MODEL}
+      - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-0}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

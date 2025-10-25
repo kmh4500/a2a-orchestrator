@@ -1,4 +1,6 @@
+// @ts-ignore - ESM import in CommonJS environment
 import { A2AClient } from "@a2a-js/sdk/client";
+// @ts-ignore - ESM import in CommonJS environment
 import { MessageSendParams, Message as A2AMessage } from "@a2a-js/sdk";
 import { v4 as uuidv4 } from "uuid";
 import { Message, AgentPersona } from "../types";

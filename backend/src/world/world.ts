@@ -1,4 +1,4 @@
-import { Agent, AGENT_PERSONAS } from "./agents";
+import { Agent } from "./agents";
 import { Message, AgentPersona } from "../types";
 import https from "https";
 import RequestManager from "./requestManager";
@@ -34,9 +34,9 @@ export class World {
     this.apiUrl = apiUrl;
     this.model = model;
     this.threadId = threadId;
-    // Use provided personas or default to AGENT_PERSONAS
-    const personas = agentPersonas && agentPersonas.length > 0 ? agentPersonas : AGENT_PERSONAS;
-    this.agents = personas.map(persona => new Agent(persona));
+    // Use provided personas or default to empty array
+    const personas = agentPersonas && agentPersonas.length > 0 ? agentPersonas : [];
+    this.agents = personas.map((persona: AgentPersona) => new Agent(persona));
     this.messageDAG = new MessageDAG();
     this.verifier = new Verifier(apiUrl, model);
     this.messageIdCounter = 0;

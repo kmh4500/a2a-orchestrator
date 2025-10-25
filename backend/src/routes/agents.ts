@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+// @ts-ignore - ESM import in CommonJS environment
 import { A2AClient } from "@a2a-js/sdk/client";
 
 const router = Router();
@@ -31,7 +32,7 @@ router.post("/import", async (req: Request, res: Response) => {
           error: `Failed to fetch agent card: ${response.statusText}`
         });
       }
-      const fetchedCard = await response.json();
+      const fetchedCard = await response.json() as any;
 
       const agentInfo = {
         name: fetchedCard.name || "Unknown Agent",
